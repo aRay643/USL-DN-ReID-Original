@@ -250,10 +250,6 @@ if __name__ == '__main__':
         args.local_rank
     )
 
-
-
-
-
     optimizer = make_optimizer_2stage(cfg, model)
     scheduler = WarmupMultiStepLR(optimizer, cfg.SOLVER.STEPS, cfg.SOLVER.GAMMA,
                                          cfg.SOLVER.WARMUP_FACTOR,
@@ -330,7 +326,7 @@ if __name__ == '__main__':
             pseudo_labels_night, num_class_night = compute_pseudo_labels(features_total_night, cluster_night,
                                                                          cfg.SOLVER.K1)
 
-            # === 关键：立即释放夜间特征 ===
+            # === 释放夜间特征 ===
             del features_night, features_night_proj, img_labels_night
             torch.cuda.empty_cache()
 
@@ -356,7 +352,6 @@ if __name__ == '__main__':
 
             train_loader_night = make_dataloader_usl_dnreid(cfg, new_dataset_night)
 
-
             # CAP memory
             memory_day = ClusterMemoryAMP(momentum=cfg.MODEL.MEMORY_MOMENTUM, use_hard=True).to(device)
             memory_day.features = compute_cluster_centroids(features_total_day, pseudo_labels_day).to(device)
@@ -365,28 +360,17 @@ if __name__ == '__main__':
             memory_night = ClusterMemoryAMP(momentum=cfg.MODEL.MEMORY_MOMENTUM, use_hard=True).to(device)
             memory_night.features = compute_cluster_centroids(features_total_night, pseudo_labels_night).to(device)
 
-
-
-                        # compute cluster centroids
+            # compute cluster centroids
             centroids_total_day, centroids_total_night = [], []
-            # centroids_total_day_proj, centroids_total_night_proj = [], []
             for pid in sorted(np.unique(pids_day)):  # loop all pids
                 idxs_p = np.where(all_pids_day == pid)[0]
                 centroids_total_day.append(features_total_day[idxs_p].mean(0))
-                # centroids_total_day_proj.append(features_day_proj[idxs_p].mean(0))
-            # centroids_total_day = nn.functional.normalize(torch.stack(centroids_total_day), p=2, dim=1)
-            # centroids_total_day_proj = nn.functional.normalize(torch.stack(centroids_total_day_proj), p=2, dim=1)
             model.module.classifier_day.weight.data[:num_class_day].copy_(memory_day.features[:num_class_day])
-            # model.module.classifier_day_proj.weight.data[:num_class_day].copy_(centroids_total_day_proj)
 
             for pid in sorted(np.unique(pids_night)):  # loop all pids
                 idxs_p = np.where(all_pids_night == pid)[0]
                 centroids_total_night.append(features_total_night[idxs_p].mean(0))
-                # centroids_total_night_proj.append(features_night_proj[idxs_p].mean(0))
-            # centroids_total_night = nn.functional.normalize(torch.stack(centroids_total_night), p=2, dim=1)
-            # centroids_total_night_proj = nn.functional.normalize(torch.stack(centroids_total_night_proj), p=2, dim=1)
             model.module.classifier_night.weight.data[:num_class_night].copy_(memory_night.features[:num_class_night])
-            # model.module.classifier_night_proj.weight.data[:num_class_night].copy_(centroids_total_night_proj)
 
             mutual_counts_a, mutual_counts_b, pos_pairs, posA, neg_day2night, posB, neg_night2day = mutual_topk_partition(memory_day.features[:num_class_day].contiguous(), memory_night.features[:num_class_night].contiguous(), k=15)
             print("每个 a_i 的互为 top-k 个数:", mutual_counts_a.tolist())  # 范围 0..k
@@ -433,4 +417,4 @@ if __name__ == '__main__':
             
             if r1_d2n+r1_n2d >score:
                 score = r1_n2d + r1_d2n
-                torch.save(model.state_dict(), os.path.join(cfg.OUTPUT_DIR, f'{cfg.DATASETS.NAMES}_reid_best_{r1_d2n}_{r1_n2d}.pth'))
+                torch.save(model.state_dict(), os.path.join(cfg.OUTPUT_DIR, f'{cfg.DATASETS.NAMES}_reid_best.pth'))

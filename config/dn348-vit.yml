@@ -31,7 +31,7 @@ SOLVER:
     WARMUP_METHOD: 'linear'
     WEIGHT_DECAY: 1e-4
     WEIGHT_DECAY_BIAS: 1e-4
-    MAX_EPOCHS: 150
+    MAX_EPOCHS: 180
     CHECKPOINT_PERIOD: 180
     LOG_PERIOD: 50
     WARMUP_EPOCHS: 5
@@ -59,6 +59,6 @@ TEST:
   RE_RANKING: False
 
 DATASETS:
-  NAMES: ('dn348')
+  NAMES: ('dnwild') #dn348, wild
   ROOT_DIR: ('../../dataset/dn_reid/')
-OUTPUT_DIR: './output_logs'
+OUTPUT_DIR: './output_logs_wild'

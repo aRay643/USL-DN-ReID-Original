@@ -84,14 +84,10 @@ class DayNightReID(nn.Module):
 
         self.classifier_day = nn.Linear(self.in_planes+self.in_planes_proj, 3000, bias=False)
         self.classifier_day.apply(initialize_classifier_weights)
-        # self.classifier_day_proj = nn.Linear(self.in_planes_proj, 3000, bias=False)
-        # self.classifier_day_proj.apply(initialize_classifier_weights)
 
 
         self.classifier_night = nn.Linear(self.in_planes+self.in_planes_proj, 3000, bias=False)
         self.classifier_night.apply(initialize_classifier_weights)
-        # self.classifier_night_proj = nn.Linear(self.in_planes_proj, 3000, bias=False)
-        # self.classifier_night_proj.apply(initialize_classifier_weights)
 
         self.h_resolution = int((cfg.INPUT.SIZE_TRAIN[0]-16)//cfg.MODEL.STRIDE_SIZE[0] + 1)
         self.w_resolution = int((cfg.INPUT.SIZE_TRAIN[1]-16)//cfg.MODEL.STRIDE_SIZE[1] + 1)
@@ -129,14 +125,6 @@ class DayNightReID(nn.Module):
                 return 0
             return text_features.float()
 
-        if cam_label != None and view_label!=None:
-            cv_embed = self.sie_coe * self.cv_embed[cam_label * self.view_num + view_label]
-        elif cam_label != None:
-            cv_embed = self.sie_coe * self.cv_embed[cam_label]
-        elif view_label!=None:
-            cv_embed = self.sie_coe * self.cv_embed[view_label]
-        else:
-            cv_embed = None
         _, image_features, image_features_proj = self.image_encoder(x) 
         img_feature = image_features[:,0]
         # img_feature_proj = image_features_proj.permute(1,0,2)
@@ -146,7 +134,6 @@ class DayNightReID(nn.Module):
         feat_proj = self.bottleneck_proj(img_feature_proj) 
         
         out_feat = torch.cat([feat, feat_proj], dim=1)
-        # out_feat = feat_proj
 
         if self.training:
             if modal == 1:
@@ -158,16 +145,6 @@ class DayNightReID(nn.Module):
             return out_feat, logit, feat_proj
         else:
             return out_feat
-
-    # def load_param(self, trained_path):
-    #     param_dict = torch.load(trained_path)
-    #     for i in param_dict:
-    #         if "prompt_learner" in i:
-    #             continue
-    #         if not self.training and 'classifier' in i:
-    #             continue # ignore classifier weights in evaluation
-    #         self.state_dict()[i.replace('module.', '')].copy_(param_dict[i])
-    #     print('Loading pretrained model from {}'.format(trained_path))
 
     def load_param(self, model_path):
         param_dict = torch.load(model_path)
@@ -204,12 +181,12 @@ class CrossDomainPromptLearner(nn.Module):
 
         n_cls_ctx = 4
         self.n_cls_ctx = n_cls_ctx
-        cls_vectors_day = torch.empty(num_img_day, n_cls_ctx, ctx_dim, dtype=dtype)
-        cls_vectors_night = torch.empty(num_img_night, n_cls_ctx, ctx_dim, dtype=dtype)
-        nn.init.normal_(cls_vectors_day, std=0.02)
-        nn.init.normal_(cls_vectors_night, std=0.02)
-        self.cls_ctx_day = nn.Parameter(cls_vectors_day)
-        self.cls_ctx_night = nn.Parameter(cls_vectors_night)
+        num_vectors_day = torch.empty(num_img_day, n_cls_ctx, ctx_dim, dtype=dtype)
+        num_vectors_night = torch.empty(num_img_night, n_cls_ctx, ctx_dim, dtype=dtype)
+        nn.init.normal_(num_vectors_day, std=0.02)
+        nn.init.normal_(num_vectors_night, std=0.02)
+        self.num_ctx_day = nn.Parameter(num_vectors_day)
+        self.num_ctx_night = nn.Parameter(num_vectors_night)
 
         # These token vectors will be saved when in save_model(),
         # but they should be ignored in load_model() as we want to use
@@ -232,7 +209,7 @@ class CrossDomainPromptLearner(nn.Module):
         vis_bias = vis_bias.unsqueeze(1).repeat(1, self.n_cls_ctx, 1)
 
         if modal == 1:
-            cls_ctx_day = self.cls_ctx_day[index] + vis_bias
+            num_ctx_day = self.num_ctx_day[index] + vis_bias
             b = index.shape[0]
             prefix_day = self.token_prefix_day.expand(b, -1, -1)
             suffix_day = self.token_suffix_day.expand(b, -1, -1)
@@ -240,14 +217,14 @@ class CrossDomainPromptLearner(nn.Module):
             prompts = torch.cat(
                 [
                     prefix_day,  # (n_cls, 1, dim)
-                    cls_ctx_day,  # (n_cls, n_ctx, dim)
+                    num_ctx_day,  # (n_cls, n_ctx, dim)
                     suffix_day,  # (n_cls, *, dim)
                 ],
                 dim=1,
             )
             return  prompts
         elif modal == 2:
-            cls_ctx_night = self.cls_ctx_night[index] + vis_bias
+            num_ctx_night = self.num_ctx_night[index] + vis_bias
             b = index.shape[0]
             prefix_night = self.token_prefix_night.expand(b, -1, -1)
             suffix_night = self.token_suffix_night.expand(b, -1, -1)
@@ -255,7 +232,7 @@ class CrossDomainPromptLearner(nn.Module):
             prompts = torch.cat(
                 [
                     prefix_night,  # (n_cls, 1, dim)
-                    cls_ctx_night,  # (n_cls, n_ctx, dim)
+                    num_ctx_night,  # (n_cls, n_ctx, dim)
                     suffix_night,  # (n_cls, *, dim)
                 ],
                 dim=1,

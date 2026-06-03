@@ -1,15 +1,11 @@
 # Bridging Day and Night: Unsupervised Cross-Domain Re-Identification with Synergistic Prompt and Prototype Learning
 
-Paper: Coming soon
-
 We propose a two-stage framework for unsupervised day-night vehicle re-identification. Stage-1 performs instance-aware image-text alignment with a frozen CLIP backbone, a Dynamic-Bias Net, and learnable prompts. Stage-2 introduces intra-domain identity association (IIA) and cross-domain prototype matching (CPM) to establish robust annotation-free correspondences across day and night domains.
-
-Code will be released soon.
 
 ## Upload History
 
 - 2026/04/06: README released.
-- Code will be released soon.
+- 2026/06/03: Code released.
 
 ## Pipeline
 

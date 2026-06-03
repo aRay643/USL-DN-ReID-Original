@@ -1,6 +1,6 @@
-torch==1.13.1+cu116
-torchaudio==0.13.1+cu116
-torchvision==0.14.1+cu116
+# torch==2.9.1+cu128
+# torchaudio==2.9.1+cu128
+# torchvision==0.24.1+cu128
 numpy==1.26.4
 Pillow
 requests
