@@ -213,10 +213,7 @@ def sym_infoc_nce_all_ij(
             row[torch.arange(i_pos.size(0), device=sim.device), j_pos] = float('-inf')
             loss_ab = -(pos_ab - torch.logsumexp(row, dim=1)).mean()
         else:
-            # 按 (i,jneg) 汇总
-            # 为每个 (i_pos[k]) 收集它的 jneg 列表
             m = i_pos.size(0)
-            # 建立 i -> 所有对应的行号 rid（因为同一个 i 可能出现在 pos_pairs_ij 的多个 rid）
             from collections import defaultdict
             i_to_rows = defaultdict(list)
             for rid, i in enumerate(i_pos.tolist()):
@@ -251,15 +248,12 @@ def sym_infoc_nce_all_ij(
                 loss_ab = torch.stack(loss_list).mean()
 
         # ===== B -> A =====
-        # 方向相反：以 B 为锚等价于在 A 中找 negatives，但我们仍保持 (i,j) 顺序
         pos_ba = pos_ab  # 同一个 (i,j)
         if neg_pairs_ba_ij is None or neg_pairs_ba_ij.numel() == 0:
             col = (sim.t()[j_pos] / tau)                    # (m,A)
             col[torch.arange(j_pos.size(0), device=sim.device), i_pos] = float('-inf')
             loss_ba = -(pos_ba - torch.logsumexp(col, dim=1)).mean()
         else:
-            # neg_pairs_ba_ij 是 (i_neg, j) 的集合（仍是 (i,j) 顺序）
-            # 为每个 (j_pos[k]) 收集它的 i_neg 列表
             from collections import defaultdict
             j_to_rows = defaultdict(list)
             for rid, j in enumerate(j_pos.tolist()):

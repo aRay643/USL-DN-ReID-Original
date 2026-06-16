@@ -87,42 +87,29 @@ def mutual_topk_partition(
     torch.Tensor,  # pos_pairs_from_B: (mB, 2) mutual restricted to B's top-k
     torch.Tensor,  # neg_pairs_b2a: (b*k - mB, 2) per B anchor, non-mutual in its top-k
 ]:
-    """
-    将每个锚的 top-k 精确划分为 正/负 对，从而满足：
-      对 A 侧：pos_from_A 个数 + neg_a2b 个数 == a * k
-      对 B 侧：pos_from_B 个数 + neg_b2a 个数 == b * k
-    同时返回去重后的 mutual 正对集合 pos_pairs（与方向无关）。
-    """
     device = features_a.device
     a, d = features_a.shape
     b, _ = features_b.shape
     kA = min(k, b)
     kB = min(k, a)
 
-    # 1) 归一化 + 相似度
     fa = torch.nn.functional.normalize(features_a, dim=1)
     fb = torch.nn.functional.normalize(features_b, dim=1)
     sim = fa @ fb.T  # (a, b)
 
-    # 2) A->B 与 B->A 的 top-k
     topk_b_for_a = torch.topk(sim, k=kA, dim=1).indices        # (a, kA)
     topk_a_for_b = torch.topk(sim.T, k=kB, dim=1).indices      # (b, kB)
 
-    # 3) 互为 top-k 掩码 M(i,j) = True 当且仅当 j∈Topk_B(i) 且 i∈Topk_A(j)
     A_top = torch.zeros((a, b), dtype=torch.bool, device=device)
     A_top.scatter_(1, topk_b_for_a, True)
     B_top = torch.zeros((b, a), dtype=torch.bool, device=device)
     B_top.scatter_(1, topk_a_for_b, True)
     M = A_top & B_top.T  # (a, b)
 
-    # 4) 去重后的 mutual 正对（与方向无关）
     pos_pairs = M.nonzero(as_tuple=False)  # (m, 2) [i, j]
 
-    # 5) 针对 A 侧：把每个 i 的 top-k 精确划分为 正/负
-    #    mask_A(i, t) 表示 topk_b_for_a[i, t] 是否与 i 互为 top-k
     mask_A = M[torch.arange(a, device=device).unsqueeze(1), topk_b_for_a]  # (a, kA)
 
-    # 正对（来源于 A 的 top-k 视角）
     rows_A = torch.arange(a, device=device).unsqueeze(1).expand_as(topk_b_for_a)  # (a, kA)
     pos_A_flat_mask = mask_A.reshape(-1)                      # (a*kA,)
     pos_pairs_from_A = torch.stack([
@@ -130,14 +117,12 @@ def mutual_topk_partition(
         topk_b_for_a.reshape(-1)[pos_A_flat_mask]
     ], dim=1)                                                # (mA, 2)
 
-    # 负对（每个 i 的 top-k 中非互配项）
     neg_A_flat_mask = (~mask_A).reshape(-1)
     neg_pairs_a2b = torch.stack([
         rows_A.reshape(-1)[neg_A_flat_mask],
         topk_b_for_a.reshape(-1)[neg_A_flat_mask]
     ], dim=1)                                                # (a*kA - mA, 2)
 
-    # 6) 针对 B 侧：同理划分
     mask_B = M.T[torch.arange(b, device=device).unsqueeze(1), topk_a_for_b]  # (b, kB)
     rows_B = torch.arange(b, device=device).unsqueeze(1).expand_as(topk_a_for_b)
 
@@ -153,21 +138,16 @@ def mutual_topk_partition(
         rows_B.reshape(-1)[neg_B_flat_mask]         # j in B
     ], dim=1)                                       # (b*kB - mB, 2)
 
-    # 7) 统计（可用于断言/调试）
     mutual_counts_a = M.sum(dim=1)  # (a,)
     mutual_counts_b = M.sum(dim=0)  # (b,)
-
-    # 可选：一致性检查（训练时可注释掉避免开销）
-    # assert pos_pairs_from_A.size(0) + neg_pairs_a2b.size(0) == a * kA
-    # assert pos_pairs_from_B.size(0) + neg_pairs_b2a.size(0) == b * kB
 
     return (mutual_counts_a, mutual_counts_b,
             pos_pairs, pos_pairs_from_A, neg_pairs_a2b,
             pos_pairs_from_B, neg_pairs_b2a)
 
-# 统一的键构造方式（和你原来一致）
 def key3(path):
     return "/".join(str(path).split("/")[-3:])
+
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description="ReID Baseline Training")

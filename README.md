@@ -1,6 +1,10 @@
-# Bridging Day and Night: Unsupervised Cross-Domain Re-Identification with Synergistic Prompt and Prototype Learning
+# Bridging Day and Night: Unsupervised Cross-Domain Re-Identification with Synergistic Prompt and Prototype Learning 
 
-We propose a two-stage framework for unsupervised day-night vehicle re-identification. Stage-1 performs instance-aware image-text alignment with a frozen CLIP backbone, a Dynamic-Bias Net, and learnable prompts. Stage-2 introduces intra-domain identity association (IIA) and cross-domain prototype matching (CPM) to establish robust annotation-free correspondences across day and night domains.
+
+
+We propose a two-stage framework for unsupervised day-night vehicle re-identification. Stage-1 performs instance-aware image-text alignment with a frozen CLIP backbone, a Dynamic-Bias Net, and learnable prompts. Stage-2 introduces intra-domain identity association (IIA) and cross-domain prototype matching (CPM) to establish robust annotation-free correspondences across day and night domains. [paper](https://arxiv.org/abs/2606.12258) 
+
+
 
 ## Upload History
 
@@ -12,6 +16,17 @@ We propose a two-stage framework for unsupervised day-night vehicle re-identific
 ![Pipeline](pipeline.png)
 
 Overview of the proposed framework. In Stage-1, the image and text encoders are kept frozen while unlabeled day and night vehicle images are aligned with learnable textual prompts through instance-aware dynamic-bias adaptation. In Stage-2, the image encoder is activated to build domain-specific prototype memory banks, followed by intra-domain identity association and cross-domain prototype matching for annotation-free correspondence learning.
+
+##  Installation
+
+```text
+conda create -n dnreid python=3.10 -y
+
+conda activate dnreid
+
+pip install -r requirements.txt
+``` 
+Please make sure that PyTorch and CUDA are correctly installed according to your local environment.
 
 ## Datasets
 
@@ -48,6 +63,9 @@ Results on DN-348 and DN-Wild under the unsupervised setting (USL):
 | PCA | TIFS'25 | 63.3% / 38.3% | 74.6% / 38.9% | 44.2% / 20.7% | 42.6% / 24.7% |
 | Ours | This work | 70.7% / 42.3% | 79.6% / 43.7% | 49.9% / 28.2% | 47.6% / 29.5% |
 
+## Training and Evaluation
+Just need to execute this script to run usl_train_pcl.py and make appropriate modifications to the relevant configurations in dn348-vit.yml
+
 ## Acknowledgement
 
 This repository is built with inspiration from the following works. We sincerely appreciate their contributions to Re-ID and vision-language research.
@@ -55,3 +73,19 @@ This repository is built with inspiration from the following works. We sincerely
 - [CLIP](https://github.com/openai/CLIP)
 - [CLIP-ReID](https://github.com/Syliz517/CLIP-ReID)
 - [PCL](https://github.com/RikoLi/PCL-CLIP)
+
+
+## Citation
+
+If you find this work useful for your research, please consider citing our paper.
+
+```bibtex
+@InProceedings{Xu_2026_CVPR,
+    author    = {Xu, Jiyang and Liu, Rui and Dai, Hang},
+    title     = {Bridging Day and Night: Unsupervised Cross-Domain Re-Identification with Synergistic Prompt and Prototype Learning},
+    booktitle = {Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) Findings},
+    month     = {June},
+    year      = {2026},
+    pages     = {6612-6621}
+}
+```
