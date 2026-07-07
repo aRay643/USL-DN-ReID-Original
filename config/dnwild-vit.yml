@@ -59,6 +59,6 @@ TEST:
   RE_RANKING: False
 
 DATASETS:
-  NAMES: ('dn348') #dn348, wild
+  NAMES: ('dnwild') #dn348, wild
   ROOT_DIR: ('../../dataset/dn_reid/')
-OUTPUT_DIR: './output_logs_348'
+OUTPUT_DIR: './output_logs_wild'

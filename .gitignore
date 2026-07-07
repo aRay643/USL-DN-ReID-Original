@@ -1,0 +1,16 @@
+# Python bytecode/cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Slurm output logs
+slurm-*.out
+slurm-*.err
+*.slurm
+
+# Experiment outputs/logs/checkpoints
+output_logs*/
+logs/
+*.log
+
+clip/bpe_simple_vocab_16e6.txt.gz
