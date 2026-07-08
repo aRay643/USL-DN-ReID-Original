@@ -249,7 +249,7 @@ if __name__ == '__main__':
                 cluster_day = DBSCAN(eps=day_eps, min_samples=4, metric='precomputed', n_jobs=8)
                 cluster_night = DBSCAN(eps=night_eps, min_samples=4, metric='precomputed', n_jobs=8)
 
-            print(f'==> Create pseudo labels for unlabeled day data, epse:{day_eps}')
+            logger.info(f'==> Create pseudo labels for unlabeled day data, epse:{day_eps}')
             features_day, features_day_proj, img_labels_day = extract_all_features(model, cluster_loader_day, logger)
             features_day = torch.cat(
                 [features_day["/".join(str(f).split("/")[-3:])].unsqueeze(0) for f, _, in sorted(train_day)],
@@ -282,11 +282,11 @@ if __name__ == '__main__':
                 all_pids_day.append(pid)
 
             # statistics of clusters and un-clustered instances
-            print('==> Statistics for epoch {} day train_set: {} clusters, {} un-clustered instances'.format(epoch,
-                                                                                                             num_class_day,
-                                                                                                             num_outliers_day))
+            logger.info('==> Statistics for epoch {} day train_set: {} clusters, {} un-clustered instances'.format(epoch,
+                                                                                                                    num_class_day,
+                                                                                                                    num_outliers_day))
 
-            print(f'==> Create pseudo labels for unlabeled night data, epse:{night_eps}')
+            logger.info(f'==> Create pseudo labels for unlabeled night data, epse:{night_eps}')
             features_night, features_night_proj, img_labels_night = extract_all_features(model, cluster_loader_night,
                                                                                          logger)
             features_night = torch.cat(
@@ -324,9 +324,9 @@ if __name__ == '__main__':
                 all_pids_night.append(pid)
 
             # statistics of clusters and un-clustered instances
-            print('==> Statistics for epoch {} night train_set: {} clusters, {} un-clustered instances'.format(epoch,
-                                                                                                               num_class_night,
-                                                                                                               num_outliers_night))
+            logger.info('==> Statistics for epoch {} night train_set: {} clusters, {} un-clustered instances'.format(epoch,
+                                                                                                                      num_class_night,
+                                                                                                                      num_outliers_night))
 
             train_loader_day = make_dataloader_usl_dnreid(cfg, new_dataset_day)
 
