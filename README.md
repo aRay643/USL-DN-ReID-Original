@@ -66,6 +66,25 @@ Results on DN-348 and DN-Wild under the unsupervised setting (USL):
 ## Training and Evaluation
 Just need to execute this script to run usl_train_pcl.py and make appropriate modifications to the relevant configurations in dn348-vit.yml
 
+### SYSU-MM01 minimal PCL baseline
+
+The independent SYSU baseline uses one shared CLIP ViT image encoder and the
+L2-normalized 768-D CLS token. It has no BN neck, prompt/text branch,
+projection feature, classifier, or cross-modal loss. Its complete objective is
+`PCL_visible + PCL_infrared`.
+
+```bash
+python train_sysu_baseline.py --config_file config/sysu-baseline.yml
+```
+
+Training records the official all-search and indoor-search 10-trial metrics at
+epoch 0 and every evaluation period. Evaluate a saved baseline checkpoint with:
+
+```bash
+python train_sysu_baseline.py --config_file config/sysu-baseline.yml \
+  --weights output_logs_sysu_baseline/baseline_best.pth --evaluate
+```
+
 ## Acknowledgement
 
 This repository is built with inspiration from the following works. We sincerely appreciate their contributions to Re-ID and vision-language research.

@@ -2,6 +2,7 @@ import torch
 import numpy as np
 import os
 from utils.reranking import re_ranking
+from utils.sysu_metrics import eval_sysu
 
 
 def euclidean_distance(qf, gf):
@@ -153,12 +154,6 @@ def eval_regdb(distmat, q_pids, g_pids, max_rank=20):
     return all_cmc, mAP, mINP
 
 
-
-
-
-
-
-
 class R1_mAP_eval():
     def __init__(self, num_query, max_rank=50, feat_norm=True, reranking=False):
         super(R1_mAP_eval, self).__init__()
@@ -200,3 +195,57 @@ class R1_mAP_eval():
 
         all_cmc, map, minp = eval_regdb(distmat, q_pids, g_pids)
         return all_cmc, map, minp
+
+
+class R1_mAP_eval_SYSU:
+    def __init__(self, num_query, max_rank=20, feat_norm=True, reranking=False):
+        self.num_query = num_query
+        self.max_rank = max_rank
+        self.feat_norm = feat_norm
+        self.reranking = reranking
+
+    def reset(self):
+        self.feats = []
+        self.pids = []
+        self.camids = []
+
+    def update(self, output):
+        feat, pid, camid = output
+        self.feats.append(feat.cpu())
+        self.pids.extend(np.asarray(pid))
+        self.camids.extend(np.asarray(camid))
+
+    def compute(self):
+        feats = torch.cat(self.feats, dim=0)
+        if self.feat_norm:
+            print("The test feature is normalized")
+            feats = torch.nn.functional.normalize(feats, dim=1, p=2)
+
+        query_features = feats[:self.num_query]
+        gallery_features = feats[self.num_query:]
+        query_pids = np.asarray(self.pids[:self.num_query])
+        gallery_pids = np.asarray(self.pids[self.num_query:])
+        query_camids = np.asarray(self.camids[:self.num_query])
+        gallery_camids = np.asarray(self.camids[self.num_query:])
+
+        if self.reranking:
+            print("=> Enter reranking")
+            distmat = re_ranking(
+                query_features,
+                gallery_features,
+                k1=50,
+                k2=15,
+                lambda_value=0.3,
+            )
+        else:
+            print("=> Computing DistMat with euclidean_distance")
+            distmat = euclidean_distance(query_features, gallery_features)
+
+        return eval_sysu(
+            distmat,
+            query_pids,
+            gallery_pids,
+            query_camids,
+            gallery_camids,
+            self.max_rank,
+        )

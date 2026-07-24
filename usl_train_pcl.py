@@ -6,8 +6,21 @@ import os
 import argparse
 from config import cfg
 from solver.lr_scheduler import WarmupMultiStepLR
-from datasets.make_dataloader import make_dataloader_usl_dnreid, make_dataset, make_clusterloader, make_testloader_usl_dnreid, make_dataset_dnwild
-from pcl.processor_pcl import ClusterContrastTrainer, do_inference, do_train_stage1
+from datasets.make_dataloader import (
+    make_clusterloader,
+    make_dataloader_usl_dnreid,
+    make_dataset,
+    make_dataset_dnwild,
+    make_sysu_dataset_manager,
+    make_testloader_sysu,
+    make_testloader_usl_dnreid,
+)
+from pcl.processor_pcl import (
+    ClusterContrastTrainer,
+    do_inference,
+    do_inference_sysu,
+    do_train_stage1,
+)
 from pcl.optimizer import make_optimizer_2stage, make_optimizer_1stage
 from pcl.model import make_model
 from utils.meter import AverageMeter, to_torch
@@ -148,6 +161,10 @@ def mutual_topk_partition(
 def key3(path):
     return "/".join(str(path).split("/")[-3:])
 
+
+def normalize_dataset_name(name):
+    return str(name).strip().lower().replace("_", "-")
+
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description="ReID Baseline Training")
@@ -189,12 +206,26 @@ if __name__ == '__main__':
         torch.distributed.init_process_group(backend='nccl', init_method='env://')
 
     device = "cuda"
-    if cfg.DATASETS.NAMES == "dn348":
+    dataset_name = normalize_dataset_name(cfg.DATASETS.NAMES)
+    sysu_dataset = None
+    if dataset_name == "dn348":
         train_day, train_night, Test_day, Test_night = make_dataset(cfg)
         day_eps, night_eps = 0.7, 0.7
+        domain1_name, domain2_name = "day", "night"
+    elif dataset_name in {"sysu", "sysu-mm01"}:
+        sysu_dataset = make_sysu_dataset_manager(cfg)
+        train_visible = sysu_dataset.train_visible
+        train_infrared = sysu_dataset.train_infrared
+
+        # Reuse the legacy two-domain storage slots without changing checkpoint keys.
+        # For SYSU, modal=1/day slot is visible and modal=2/night slot is infrared.
+        train_day, train_night = train_visible, train_infrared
+        day_eps, night_eps = 0.6, 0.6
+        domain1_name, domain2_name = "visible", "infrared"
     else:
         train_day, train_night, Query_day, Query_night, Test_day, Test_night = make_dataset_dnwild(cfg)
         day_eps, night_eps = 0.8, 0.8
+        domain1_name, domain2_name = "day", "night"
     cluster_loader_day = make_clusterloader(cfg, train_day)
     cluster_loader_night = make_clusterloader(cfg, train_night)
 
@@ -249,7 +280,7 @@ if __name__ == '__main__':
                 cluster_day = DBSCAN(eps=day_eps, min_samples=4, metric='precomputed', n_jobs=8)
                 cluster_night = DBSCAN(eps=night_eps, min_samples=4, metric='precomputed', n_jobs=8)
 
-            logger.info(f'==> Create pseudo labels for unlabeled day data, epse:{day_eps}')
+            logger.info(f'==> Create pseudo labels for unlabeled {domain1_name} data, epse:{day_eps}')
             features_day, features_day_proj, img_labels_day = extract_all_features(model, cluster_loader_day, logger)
             features_day = torch.cat(
                 [features_day["/".join(str(f).split("/")[-3:])].unsqueeze(0) for f, _, in sorted(train_day)],
@@ -280,13 +311,13 @@ if __name__ == '__main__':
                     new_dataset_day.append((fname, pid))
                     pids_day.append(pid)
                 all_pids_day.append(pid)
+            all_pids_day = np.asarray(all_pids_day, dtype=np.int64)
 
             # statistics of clusters and un-clustered instances
-            logger.info('==> Statistics for epoch {} day train_set: {} clusters, {} un-clustered instances'.format(epoch,
-                                                                                                                    num_class_day,
-                                                                                                                    num_outliers_day))
+            logger.info('==> Statistics for epoch {} {} train_set: {} clusters, {} un-clustered instances'.format(
+                epoch, domain1_name, num_class_day, num_outliers_day))
 
-            logger.info(f'==> Create pseudo labels for unlabeled night data, epse:{night_eps}')
+            logger.info(f'==> Create pseudo labels for unlabeled {domain2_name} data, epse:{night_eps}')
             features_night, features_night_proj, img_labels_night = extract_all_features(model, cluster_loader_night,
                                                                                          logger)
             features_night = torch.cat(
@@ -317,16 +348,16 @@ if __name__ == '__main__':
             for i, ((fname, _), label) in enumerate(zip(sorted(train_night), pseudo_labels_night)):
                 pid = label.item()
                 if pid >= num_class_night:  # append data except outliers
-                    num_outliers_day += 1
+                    num_outliers_night += 1
                 else:
                     new_dataset_night.append((fname, pid))
                     pids_night.append(pid)
                 all_pids_night.append(pid)
+            all_pids_night = np.asarray(all_pids_night, dtype=np.int64)
 
             # statistics of clusters and un-clustered instances
-            logger.info('==> Statistics for epoch {} night train_set: {} clusters, {} un-clustered instances'.format(epoch,
-                                                                                                                      num_class_night,
-                                                                                                                      num_outliers_night))
+            logger.info('==> Statistics for epoch {} {} train_set: {} clusters, {} un-clustered instances'.format(
+                epoch, domain2_name, num_class_night, num_outliers_night))
 
             train_loader_day = make_dataloader_usl_dnreid(cfg, new_dataset_day)
 
@@ -366,7 +397,7 @@ if __name__ == '__main__':
                         neg_night2day=neg_night2day)
 
         if epoch % eval_period == 0:
-            if cfg.DATASETS.NAMES == "dn348":
+            if dataset_name == "dn348":
                 print("--------Day to Night Test-----------")
                 val_loader = make_testloader_usl_dnreid(cfg, Test_day, Test_night)
                 map_d2n, r1_d2n, r5d2n = do_inference(cfg,
@@ -380,6 +411,45 @@ if __name__ == '__main__':
                             model,
                             val_loader,
                             len(Test_night))
+                eval_score = r1_d2n + r1_n2d
+            elif dataset_name in {"sysu", "sysu-mm01"}:
+                sysu_results = {}
+                metric_keys = ("mAP", "mINP", "rank1", "rank5", "rank10", "rank20")
+                for mode in ("all", "indoor"):
+                    trial_results = []
+                    for trial in range(10):
+                        header = (
+                            "--------SYSU-MM01 {}-search single-shot trial {}/10--------"
+                        ).format(mode, trial + 1)
+                        print(header)
+                        logger.info(header)
+                        val_loader, num_query = make_testloader_sysu(
+                            cfg, sysu_dataset, mode=mode, trial=trial
+                        )
+                        result = do_inference_sysu(cfg, model, val_loader, num_query)
+                        trial_results.append(result)
+
+                    mean_result = {
+                        key: float(np.mean([result[key] for result in trial_results]))
+                        for key in metric_keys
+                    }
+                    sysu_results[mode] = mean_result
+                    summary = (
+                        "SYSU-MM01 {}-search 10-trial mean: Rank-1: {:.1%}, "
+                        "Rank-5: {:.1%}, Rank-10: {:.1%}, Rank-20: {:.1%}, "
+                        "mAP: {:.1%}, mINP: {:.1%}"
+                    ).format(
+                        mode,
+                        mean_result["rank1"],
+                        mean_result["rank5"],
+                        mean_result["rank10"],
+                        mean_result["rank20"],
+                        mean_result["mAP"],
+                        mean_result["mINP"],
+                    )
+                    print(summary)
+                    logger.info(summary)
+                eval_score = sysu_results["all"]["rank1"]
             else:
                 print("--------Day to Night Test-----------")
                 val_loader = make_testloader_usl_dnreid(cfg, Query_day, Test_night)
@@ -394,7 +464,8 @@ if __name__ == '__main__':
                             model,
                             val_loader,
                             len(Query_night))
-            
-            if r1_d2n+r1_n2d >score:
-                score = r1_n2d + r1_d2n
+                eval_score = r1_d2n + r1_n2d
+
+            if eval_score > score:
+                score = eval_score
                 torch.save(model.state_dict(), os.path.join(cfg.OUTPUT_DIR, f'{cfg.DATASETS.NAMES}_reid_best.pth'))

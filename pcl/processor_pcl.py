@@ -3,7 +3,7 @@ import os
 import torch
 import torch.nn.functional as F
 from utils.meter import AverageMeter
-from utils.metrics import R1_mAP_eval
+from utils.metrics import R1_mAP_eval, R1_mAP_eval_SYSU
 from torch.cuda import amp
 from .utils import *
 from .loss import ClusterMemoryAMP, CrossEntropyLabelSmooth
@@ -434,3 +434,68 @@ def do_inference(cfg,
     for r in [1, 5, 10]:
         logger.info("CMC curve, Rank-{:<3}:{:.1%}".format(r, cmc[r - 1]))
     return mAP, cmc[0], cmc[4]
+
+
+def do_inference_sysu(cfg, model, val_loader, num_query):
+    """Run one SYSU-MM01 IR-query/visible-gallery evaluation trial."""
+    device = "cuda"
+    logger = logging.getLogger("PCL")
+    logger.info("Enter SYSU-MM01 inferencing")
+    model.to(device)
+
+    evaluator = R1_mAP_eval_SYSU(
+        num_query,
+        max_rank=20,
+        feat_norm=cfg.TEST.FEAT_NORM,
+        reranking=cfg.TEST.RE_RANKING,
+    )
+    evaluator.reset()
+
+    def horizontal_flip(images):
+        indices = torch.arange(
+            images.size(3) - 1, -1, -1, device=images.device, dtype=torch.long
+        )
+        return images.index_select(3, indices)
+
+    def extract_with_flip(images, modal):
+        features = model(images, modal=modal)
+        flipped_features = model(horizontal_flip(images), modal=modal)
+        return (features + flipped_features) / 2.0
+
+    model.eval()
+    seen = 0
+    for images, pids, camids, _ in val_loader:
+        with torch.no_grad():
+            images = images.to(device)
+            batch_start = seen
+            batch_end = seen + images.shape[0]
+            query_count = max(0, min(batch_end, num_query) - batch_start)
+
+            if query_count == 0:
+                features = extract_with_flip(images, modal=1)  # visible gallery
+            elif query_count == images.shape[0]:
+                features = extract_with_flip(images, modal=2)  # infrared query
+            else:
+                query_features = extract_with_flip(images[:query_count], modal=2)
+                gallery_features = extract_with_flip(images[query_count:], modal=1)
+                features = torch.cat((query_features, gallery_features), dim=0)
+
+            evaluator.update((features, pids, camids))
+            seen = batch_end
+
+    cmc, mAP, mINP = evaluator.compute()
+    logger.info("SYSU-MM01 Validation Results")
+    logger.info(
+        "mAP: {:.1%}, mINP: {:.1%}, Rank-1: {:.1%}, Rank-5: {:.1%}, "
+        "Rank-10: {:.1%}, Rank-20: {:.1%}".format(
+            mAP, mINP, cmc[0], cmc[4], cmc[9], cmc[19]
+        )
+    )
+    return {
+        "mAP": float(mAP),
+        "mINP": float(mINP),
+        "rank1": float(cmc[0]),
+        "rank5": float(cmc[4]),
+        "rank10": float(cmc[9]),
+        "rank20": float(cmc[19]),
+    }

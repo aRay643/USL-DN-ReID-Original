@@ -1,8 +1,8 @@
 import torch
 import torchvision.transforms as T
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
 
-from .bases import ImageDataset
+from .bases import ImageDataset, read_image
 from timm.data.random_erasing import RandomErasing
 from .sampler import RandomIdentitySampler
 from .dukemtmcreid import DukeMTMCreID
@@ -15,6 +15,7 @@ from .vehicleid import VehicleID
 from .veri import VeRi
 from .dn_348 import DN348DatasetManager
 from .dn_wild import DNwildDatasetManager
+from .SYSU_MM01 import SYSUMM01DatasetManager
 from .data.preprocessor import Preprocessor
 from .data import IterLoader
 from .data.sampler import RandomMultipleGallerySampler
@@ -31,6 +32,25 @@ __factory = {
     'veri': VeRi,
     'VehicleID': VehicleID
 }
+
+
+class SYSUEvalImageDataset(Dataset):
+    """Evaluation dataset that preserves SYSU-MM01 camera ids."""
+
+    def __init__(self, dataset, transform=None):
+        self.dataset = dataset
+        self.transform = transform
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, index):
+        img_path, pid, camid = self.dataset[index]
+        img = read_image(img_path)
+        if self.transform is not None:
+            img = self.transform(img)
+        fname = "/".join(str(img_path).replace("\\", "/").split("/")[-3:])
+        return img, pid, camid, fname
 
 def train_collate_fn(batch):
     """
@@ -49,6 +69,16 @@ def train_collate_unsupervised_dnreid(batch):
     imgs, pids , fnames = zip(*batch)
     pids = torch.tensor(pids, dtype=torch.int64)
     return torch.stack(imgs, dim=0), pids, fnames
+
+
+def sysu_eval_collate_fn(batch):
+    imgs, pids, camids, fnames = zip(*batch)
+    return (
+        torch.stack(imgs, dim=0),
+        torch.tensor(pids, dtype=torch.int64),
+        torch.tensor(camids, dtype=torch.int64),
+        fnames,
+    )
 
 
 
@@ -154,6 +184,15 @@ def make_dataset_dnwild(cfg):
 
     return dataset.train_day, dataset.train_night, dataset.query_day, dataset.query_night, dataset.test_day, dataset.test_night
 
+
+def make_sysu_dataset_manager(cfg):
+    return SYSUMM01DatasetManager(cfg.DATASETS.ROOT_DIR)
+
+
+def make_dataset_sysu(cfg):
+    dataset = make_sysu_dataset_manager(cfg)
+    return dataset.train_visible, dataset.train_infrared
+
 def make_dataloader_usl_dnreid(cfg, datasets):
     train_transforms = T.Compose([
         T.Resize(cfg.INPUT.SIZE_TRAIN, interpolation=3),
@@ -193,3 +232,23 @@ def make_testloader_usl_dnreid(cfg, datasets1, datasets2):
         collate_fn=train_collate_unsupervised_dnreid
     )
     return val_loader
+
+
+def make_testloader_sysu(cfg, sysu_dataset, mode="all", trial=0):
+    """Build one SYSU-MM01 IR-query/visible-gallery single-shot loader."""
+    val_transforms = T.Compose([
+        T.Resize(cfg.INPUT.SIZE_TEST),
+        T.ToTensor(),
+        T.Normalize(mean=cfg.INPUT.PIXEL_MEAN, std=cfg.INPUT.PIXEL_STD)
+    ])
+
+    query, gallery = sysu_dataset.build_eval_sets(mode=mode, trial=trial)
+    val_set = SYSUEvalImageDataset(query + gallery, val_transforms)
+    val_loader = DataLoader(
+        val_set,
+        batch_size=cfg.TEST.IMS_PER_BATCH,
+        shuffle=False,
+        num_workers=cfg.DATALOADER.NUM_WORKERS,
+        collate_fn=sysu_eval_collate_fn,
+    )
+    return val_loader, len(query)

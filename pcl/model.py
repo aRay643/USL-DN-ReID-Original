@@ -103,7 +103,13 @@ class DayNightReID(nn.Module):
             v.requires_grad_(False)
         print('Freeze patch projection layer with shape {}'.format(self.image_encoder.conv1.weight.shape))
 
-        self.prompt_learner = CrossDomainPromptLearner(num_img_day, num_img_night, clip_model.dtype, clip_model.token_embedding)
+        self.prompt_learner = CrossDomainPromptLearner(
+            num_img_day,
+            num_img_night,
+            clip_model.dtype,
+            clip_model.token_embedding,
+            cfg,
+        )
         self.text_encoder = CLIPTextEncoder(clip_model)
 
             
@@ -117,9 +123,9 @@ class DayNightReID(nn.Module):
 
         if get_text==True:
             prompts = self.prompt_learner(idx, vis_feature=vis_feat, modal=modal)
-            if modal == 1:
+            if modal == 1:  # SYSU: visible light; DN: day
                 text_features = self.text_encoder(prompts, self.prompt_learner.tokenized_prompts_day)
-            elif modal == 2:
+            elif modal == 2:  # SYSU: infrared; DN: night
                 text_features = self.text_encoder(prompts, self.prompt_learner.tokenized_prompts_night)
             else:
                 return 0
@@ -147,9 +153,14 @@ class DayNightReID(nn.Module):
             return out_feat
 
     def load_param(self, model_path):
-        param_dict = torch.load(model_path)
-        for i in param_dict:
-            self.state_dict()[i].copy_(param_dict[i])
+        param_dict = torch.load(model_path, map_location="cpu")
+        if isinstance(param_dict, dict) and "state_dict" in param_dict:
+            param_dict = param_dict["state_dict"]
+        param_dict = {
+            key[7:] if key.startswith("module.") else key: value
+            for key, value in param_dict.items()
+        }
+        self.load_state_dict(param_dict, strict=True)
         print('Loading pretrained model for finetuning from {}'.format(model_path))
 
 
@@ -159,11 +170,19 @@ def make_model(cfg, num_classes, num_img_day, num_img_night):
 
 
 class CrossDomainPromptLearner(nn.Module):
-    def __init__(self, num_img_day, num_img_night, dtype, token_embedding):
+    def __init__(self, num_img_day, num_img_night, dtype, token_embedding, cfg):
         super().__init__()
 
-        ctx_init_day = "A daytime photo of a X X X X vehicle."
-        ctx_init_night = "A nighttime photo of a X X X X vehicle."
+        dataset_name = str(cfg.DATASETS.NAMES).strip().lower().replace("_", "-")
+        if dataset_name in {"sysu", "sysu-mm01"}:
+            # Keep the legacy day/night parameter names so old DN checkpoints
+            # retain their state-dict structure. Their SYSU semantics are
+            # visible (modal=1) and infrared (modal=2), respectively.
+            ctx_init_day = "A visible photo of a X X X X person."
+            ctx_init_night = "An infrared photo of a X X X X person."
+        else:
+            ctx_init_day = "A daytime photo of a X X X X vehicle."
+            ctx_init_night = "A nighttime photo of a X X X X vehicle."
 
         ctx_dim = 512
         # use given words to initialize context vectors

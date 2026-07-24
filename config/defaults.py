@@ -67,6 +67,17 @@ _C.MODEL.PCL_LOSS_WEIGHT = 1.0
 _C.MODEL.MEMORY_MOMENTUM = 0.2
 
 # -----------------------------------------------------------------------------
+# Minimal two-domain PCL baseline
+# -----------------------------------------------------------------------------
+_C.BASELINE = CN()
+_C.BASELINE.CLUSTER_EPS = 0.6
+_C.BASELINE.CLUSTER_MIN_SAMPLES = 4
+_C.BASELINE.JACCARD_K2 = 6
+_C.BASELINE.PCL_TEMP = 0.05
+_C.BASELINE.PCL_HARD_MEMORY = True
+_C.BASELINE.EVAL_TRIALS = 10
+
+# -----------------------------------------------------------------------------
 # INPUT
 # -----------------------------------------------------------------------------
 _C.INPUT = CN()
